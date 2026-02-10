@@ -141,3 +141,106 @@ func (m *geminiModel) maybeAppendUserContent(req *model.LLMRequest) {
 		req.Contents = append(req.Contents, genai.NewContentFromText("Continue processing previous requests as instructed. Exit or provide a summary if no more outputs are needed.", "user"))
 	}
 }
+
+// Connect establishes a bidirectional streaming connection to the model.
+func (m *geminiModel) Connect(ctx context.Context, req *model.LLMRequest) (model.LiveConnection, error) {
+	// Map LLMRequest config to LiveConnectConfig
+	var modalities []genai.Modality
+	if req.Config.ResponseModalities != nil {
+		modalities = make([]genai.Modality, len(req.Config.ResponseModalities))
+		for i, m := range req.Config.ResponseModalities {
+			modalities[i] = genai.Modality(m)
+		}
+	}
+
+	config := &genai.LiveConnectConfig{
+		HTTPOptions:        req.Config.HTTPOptions,
+		ResponseModalities: modalities,
+		Temperature:        req.Config.Temperature,
+	}
+
+	if req.LiveConnectConfig != nil {
+		config = req.LiveConnectConfig
+	}
+
+	// System instruction handling
+	if req.Config != nil && req.Config.SystemInstruction != nil {
+		config.SystemInstruction = req.Config.SystemInstruction
+	}
+
+	session, err := m.client.Live.Connect(ctx, m.name, config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to live model: %w", err)
+	}
+
+	return &liveConnection{
+		session: session,
+	}, nil
+}
+
+type liveConnection struct {
+	session *genai.Session
+}
+
+func (c *liveConnection) Send(req *model.LiveRequest) error {
+	if req.Close {
+		return c.Close()
+	}
+	if req.Content != nil {
+		// Wrap single content in slice as LiveClientContentInput expects turns
+		turnComplete := true
+		return c.session.SendClientContent(genai.LiveClientContentInput{
+			Turns:        []*genai.Content{req.Content},
+			TurnComplete: &turnComplete,
+		})
+	}
+	if req.RealtimeInput != nil {
+		return c.session.SendRealtimeInput(*req.RealtimeInput)
+	}
+	if req.ToolResponse != nil {
+		return c.session.SendToolResponse(*req.ToolResponse)
+	}
+	return nil
+}
+
+func (c *liveConnection) Receive() (*model.LLMResponse, error) {
+	msg, err := c.session.Receive()
+	if err != nil {
+		return nil, err
+	}
+
+	resp := &model.LLMResponse{}
+
+	if msg.ServerContent != nil {
+		// Map ServerContent to model.LLMResponse
+		if msg.ServerContent.ModelTurn != nil {
+			resp.Content = msg.ServerContent.ModelTurn
+		}
+		resp.TurnComplete = msg.ServerContent.TurnComplete
+		resp.Interrupted = msg.ServerContent.Interrupted
+	}
+
+	if msg.ToolCall != nil {
+		// Map ToolCall to model.LLMResponse content parts
+		parts := make([]*genai.Part, 0)
+		for _, fc := range msg.ToolCall.FunctionCalls {
+			parts = append(parts, &genai.Part{
+				FunctionCall: fc,
+			})
+		}
+		if resp.Content == nil {
+			resp.Content = &genai.Content{Role: "model"}
+		}
+		resp.Content.Parts = append(resp.Content.Parts, parts...)
+	}
+
+	if msg.ToolCallCancellation != nil {
+		// TODO: Handle cancellation? Maybe just return empty response or specific error?
+	}
+
+	return resp, nil
+}
+
+func (c *liveConnection) Close() error {
+	return c.session.Close()
+}

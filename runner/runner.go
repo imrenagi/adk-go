@@ -137,7 +137,8 @@ func (r *Runner) Run(ctx context.Context, userID, sessionID string, msg *genai.C
 
 		ctx = parentmap.ToContext(ctx, r.parents)
 		ctx = runconfig.ToContext(ctx, &runconfig.RunConfig{
-			StreamingMode: runconfig.StreamingMode(cfg.StreamingMode),
+			StreamingMode:     runconfig.StreamingMode(cfg.StreamingMode),
+			LiveConnectConfig: cfg.LiveConnectConfig,
 		})
 		ctx = plugininternal.ToContext(ctx, r.pluginManager)
 
@@ -162,12 +163,13 @@ func (r *Runner) Run(ctx context.Context, userID, sessionID string, msg *genai.C
 		}
 
 		ctx := icontext.NewInvocationContext(ctx, icontext.InvocationContextParams{
-			Artifacts:   artifacts,
-			Memory:      memoryImpl,
-			Session:     sessioninternal.NewMutableSession(r.sessionService, storedSession),
-			Agent:       agentToRun,
-			UserContent: msg,
-			RunConfig:   &cfg,
+			Artifacts:        artifacts,
+			Memory:           memoryImpl,
+			Session:          sessioninternal.NewMutableSession(r.sessionService, storedSession),
+			Agent:            agentToRun,
+			UserContent:      msg,
+			RunConfig:        &cfg,
+			LiveRequestQueue: cfg.LiveRequestQueue,
 		})
 		ctx, err = r.appendMessageToSession(ctx, storedSession, msg, cfg.SaveInputBlobsAsArtifacts, r.pluginManager)
 		if err != nil {

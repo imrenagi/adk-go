@@ -26,6 +26,7 @@ import (
 type LLM interface {
 	Name() string
 	GenerateContent(ctx context.Context, req *LLMRequest, stream bool) iter.Seq2[*LLMResponse, error]
+	Connect(ctx context.Context, req *LLMRequest) (LiveConnection, error)
 }
 
 // LLMRequest is the raw LLM request.
@@ -33,6 +34,8 @@ type LLMRequest struct {
 	Model    string
 	Contents []*genai.Content
 	Config   *genai.GenerateContentConfig
+	// LiveConnectConfig defines the configuration for the live connection.
+	LiveConnectConfig *genai.LiveConnectConfig
 
 	Tools map[string]any `json:"-"`
 }
@@ -61,4 +64,19 @@ type LLMResponse struct {
 	ErrorMessage string
 	FinishReason genai.FinishReason
 	AvgLogprobs  float64
+}
+
+// LiveRequest is the request to be sent to the model in the live stream.
+type LiveRequest struct {
+	Content       *genai.Content
+	RealtimeInput *genai.LiveRealtimeInput
+	ToolResponse  *genai.LiveToolResponseInput
+	Close         bool
+}
+
+// LiveConnection represents a bidirectional streaming connection to the LLM.
+type LiveConnection interface {
+	Send(req *LiveRequest) error
+	Receive() (*LLMResponse, error)
+	Close() error
 }

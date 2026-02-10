@@ -31,11 +31,12 @@ This Go version of ADK is ideal for developers building cloud-native agent appli
 
 ## ✨ Key Features
 
-*   **Idiomatic Go:** Designed to feel natural and leverage the power of Go.
-*   **Rich Tool Ecosystem:** Utilize pre-built tools, custom functions, or integrate existing tools to give agents diverse capabilities.
-*   **Code-First Development:** Define agent logic, tools, and orchestration directly in Go for ultimate flexibility, testability, and versioning.
-*   **Modular Multi-Agent Systems:** Design scalable applications by composing multiple specialized agents.
-*   **Deploy Anywhere:** Easily containerize and deploy agents, with strong support for cloud-native environments like Google Cloud Run.
+- **Idiomatic Go:** Designed to feel natural and leverage the power of Go.
+- **Live API Streaming:** Native support for real-time, bidirectional streaming and native audio with Gemini models. See [Live Documentation](docs/LIVE.md).
+- **Rich Tool Ecosystem:** Utilize pre-built tools, custom functions, or integrate existing tools to give agents diverse capabilities.
+- **Code-First Development:** Define agent logic, tools, and orchestration directly in Go for ultimate flexibility, testability, and versioning.
+- **Modular Multi-Agent Systems:** Design scalable applications by composing multiple specialized agents.
+- **Deploy Anywhere:** Easily containerize and deploy agents, with strong support for cloud-native environments like Google Cloud Run.
 
 ## 🚀 Installation
 

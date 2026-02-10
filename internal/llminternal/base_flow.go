@@ -93,6 +93,10 @@ var (
 )
 
 func (f *Flow) Run(ctx agent.InvocationContext) iter.Seq2[*session.Event, error] {
+	if runconfig.FromContext(ctx).StreamingMode == runconfig.StreamingModeBidi {
+		return f.runLive(ctx)
+	}
+
 	return func(yield func(*session.Event, error) bool) {
 		for {
 			var lastEvent *session.Event

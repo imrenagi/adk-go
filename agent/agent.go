@@ -165,11 +165,12 @@ func (a *agent) Run(ctx InvocationContext) iter.Seq2[*session.Event, error] {
 			memory:    ctx.Memory(),
 			session:   ctx.Session(),
 
-			invocationID:  ctx.InvocationID(),
-			branch:        ctx.Branch(),
-			userContent:   ctx.UserContent(),
-			runConfig:     ctx.RunConfig(),
-			endInvocation: ctx.Ended(),
+			invocationID:     ctx.InvocationID(),
+			branch:           ctx.Branch(),
+			userContent:      ctx.UserContent(),
+			runConfig:        ctx.RunConfig(),
+			endInvocation:    ctx.Ended(),
+			liveRequestQueue: ctx.LiveRequestQueue(),
 		}
 		event, err := runBeforeAgentCallbacks(ctx)
 		if event != nil || err != nil {
@@ -423,11 +424,13 @@ type invocationContext struct {
 	memory    Memory
 	session   session.Session
 
-	invocationID  string
-	branch        string
-	userContent   *genai.Content
-	runConfig     *RunConfig
-	endInvocation bool
+	invocationID string
+	branch       string
+	userContent  *genai.Content
+	runConfig    *RunConfig
+
+	endInvocation    bool
+	liveRequestQueue *LiveRequestQueue
 }
 
 func (c *invocationContext) Agent() Agent {
@@ -468,6 +471,10 @@ func (c *invocationContext) EndInvocation() {
 
 func (c *invocationContext) Ended() bool {
 	return c.endInvocation
+}
+
+func (c *invocationContext) LiveRequestQueue() *LiveRequestQueue {
+	return c.liveRequestQueue
 }
 
 func (c *invocationContext) WithContext(ctx context.Context) InvocationContext {

@@ -16,6 +16,7 @@ package remoteagent
 
 import (
 	"context"
+	"fmt"
 	"iter"
 	"testing"
 
@@ -240,6 +241,10 @@ func (d *llmStub) Name() string {
 
 func (d *llmStub) GenerateContent(ctx context.Context, req *model.LLMRequest, stream bool) iter.Seq2[*model.LLMResponse, error] {
 	return d.generateContent(ctx, req, stream)
+}
+
+func (d *llmStub) Connect(ctx context.Context, req *model.LLMRequest) (model.LiveConnection, error) {
+	return nil, fmt.Errorf("Connect not implemented for llmStub")
 }
 
 func newInputRequestingAgent(t *testing.T, name string) agent.Agent {
