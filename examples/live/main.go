@@ -148,9 +148,8 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	// Start receiving ADK events and sending them to the WebSocket
 	go func() {
 		defer close(done)
-		userContent := genai.NewContentFromText("Start session", genai.RoleUser)
 
-		for ev, err := range runn.Run(ctx, userID, sessionID, userContent, runConfig) {
+		for ev, err := range runn.RunLive(ctx, userID, sessionID, liveRequestQueue, runConfig) {
 			if err != nil {
 				log.Printf("Runner error: %v", err)
 				return

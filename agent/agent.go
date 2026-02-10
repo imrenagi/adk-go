@@ -42,6 +42,7 @@ type Agent interface {
 	Name() string
 	Description() string
 	Run(InvocationContext) iter.Seq2[*session.Event, error]
+	RunLive(InvocationContext) iter.Seq2[*session.Event, error]
 	SubAgents() []Agent
 
 	internal() *agent
@@ -62,6 +63,7 @@ func New(cfg Config) (Agent, error) {
 		subAgents:            cfg.SubAgents,
 		beforeAgentCallbacks: cfg.BeforeAgentCallbacks,
 		run:                  cfg.Run,
+		runLive:              cfg.RunLive,
 		afterAgentCallbacks:  cfg.AfterAgentCallbacks,
 		State: agentinternal.State{
 			AgentType: agentinternal.TypeCustomAgent,
@@ -93,6 +95,8 @@ type Config struct {
 	BeforeAgentCallbacks []BeforeAgentCallback
 	// Run is the function that defines the agent's behavior.
 	Run func(InvocationContext) iter.Seq2[*session.Event, error]
+	// RunLive is the function that defines the agent's behavior in live mode.
+	RunLive func(InvocationContext) iter.Seq2[*session.Event, error]
 	// AfterAgentCallbacks is a list of callbacks that are called sequentially
 	// after the agent has completed its run.
 	//
@@ -140,6 +144,7 @@ type agent struct {
 
 	beforeAgentCallbacks []BeforeAgentCallback
 	run                  func(InvocationContext) iter.Seq2[*session.Event, error]
+	runLive              func(InvocationContext) iter.Seq2[*session.Event, error]
 	afterAgentCallbacks  []AfterAgentCallback
 }
 
@@ -199,6 +204,39 @@ func (a *agent) Run(ctx InvocationContext) iter.Seq2[*session.Event, error] {
 		event, err = runAfterAgentCallbacks(ctx)
 		if event != nil || err != nil {
 			yield(event, err)
+		}
+	}
+}
+
+func (a *agent) RunLive(ctx InvocationContext) iter.Seq2[*session.Event, error] {
+	return func(yield func(*session.Event, error) bool) {
+		ctx := &invocationContext{
+			Context:   ctx,
+			agent:     a,
+			artifacts: ctx.Artifacts(),
+			memory:    ctx.Memory(),
+			session:   ctx.Session(),
+
+			invocationID:     ctx.InvocationID(),
+			branch:           ctx.Branch(),
+			userContent:      ctx.UserContent(),
+			runConfig:        ctx.RunConfig(),
+			endInvocation:    ctx.Ended(),
+			liveRequestQueue: ctx.LiveRequestQueue(),
+		}
+
+		if a.runLive == nil {
+			yield(nil, fmt.Errorf("agent %q: RunLive not implemented", a.Name()))
+			return
+		}
+
+		for event, err := range a.runLive(ctx) {
+			if event != nil && event.Author == "" {
+				event.Author = getAuthorForEvent(ctx, event)
+			}
+			if !yield(event, err) {
+				return
+			}
 		}
 	}
 }

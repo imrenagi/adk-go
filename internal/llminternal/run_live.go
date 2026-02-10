@@ -27,7 +27,7 @@ import (
 	"google.golang.org/adk/tool"
 )
 
-func (f *Flow) runLive(ctx agent.InvocationContext) iter.Seq2[*session.Event, error] {
+func (f *Flow) RunLive(ctx agent.InvocationContext) iter.Seq2[*session.Event, error] {
 	return func(yield func(*session.Event, error) bool) {
 		if f.Model == nil {
 			yield(nil, fmt.Errorf("agent %q: %w", ctx.Agent().Name(), ErrModelNotConfigured))

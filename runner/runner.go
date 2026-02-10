@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"iter"
 	"log"
+	"strings"
 	"time"
 
 	"google.golang.org/genai"
@@ -109,6 +110,138 @@ type Runner struct {
 	pluginManager *plugininternal.PluginManager
 }
 
+func (r *Runner) RunLive(ctx context.Context, userID, sessionID string, liveRequestQueue *agent.LiveRequestQueue, cfg agent.RunConfig) iter.Seq2[*session.Event, error] {
+	return func(yield func(*session.Event, error) bool) {
+		resp, err := r.sessionService.Get(ctx, &session.GetRequest{
+			AppName:   r.appName,
+			UserID:    userID,
+			SessionID: sessionID,
+		})
+		if err != nil {
+			yield(nil, err)
+			return
+		}
+
+		storedSession := resp.Session
+
+		agentToRun, err := r.findAgentToRun(storedSession, nil)
+		if err != nil {
+			yield(nil, err)
+			return
+		}
+
+		ctx = parentmap.ToContext(ctx, r.parents)
+		ctx = runconfig.ToContext(ctx, &runconfig.RunConfig{
+			StreamingMode:     runconfig.StreamingMode(cfg.StreamingMode),
+			LiveConnectConfig: cfg.LiveConnectConfig,
+		})
+		ctx = plugininternal.ToContext(ctx, r.pluginManager)
+
+		var artifacts agent.Artifacts
+		if r.artifactService != nil {
+			artifacts = &artifactinternal.Artifacts{
+				Service:   r.artifactService,
+				SessionID: storedSession.ID(),
+				AppName:   storedSession.AppName(),
+				UserID:    storedSession.UserID(),
+			}
+		}
+
+		var memoryImpl agent.Memory = nil
+		if r.memoryService != nil {
+			memoryImpl = &imemory.Memory{
+				Service:   r.memoryService,
+				SessionID: storedSession.ID(),
+				UserID:    storedSession.UserID(),
+				AppName:   storedSession.AppName(),
+			}
+		}
+
+		invCtx := icontext.NewInvocationContext(ctx, icontext.InvocationContextParams{
+			Artifacts:        artifacts,
+			Memory:           memoryImpl,
+			Session:          sessioninternal.NewMutableSession(r.sessionService, storedSession),
+			Agent:            agentToRun,
+			RunConfig:        &cfg,
+			LiveRequestQueue: liveRequestQueue,
+		})
+
+		pluginManager := r.pluginManager
+		if pluginManager != nil {
+			defer pluginManager.RunAfterRunCallback(invCtx)
+
+			earlyExitResult, err := pluginManager.RunBeforeRunCallback(invCtx)
+			if earlyExitResult != nil || err != nil {
+				earlyExitEvent := session.NewEvent(invCtx.InvocationID())
+				earlyExitEvent.Author = "model"
+				earlyExitEvent.LLMResponse = model.LLMResponse{
+					Content: earlyExitResult,
+				}
+				if r.shouldAppendEvent(earlyExitEvent, true) {
+					if err := r.sessionService.AppendEvent(invCtx, storedSession, earlyExitEvent); err != nil {
+						yield(nil, fmt.Errorf("failed to add event to session: %w", err))
+						return
+					}
+				}
+				yield(earlyExitEvent, err)
+				return
+			}
+		}
+
+		for event, err := range agentToRun.RunLive(invCtx) {
+			if err != nil {
+				if !yield(event, err) {
+					return
+				}
+				continue
+			}
+
+			if pluginManager != nil {
+				modifiedEvent, err := pluginManager.RunOnEventCallback(invCtx, event)
+				if err != nil {
+					if !yield(nil, err) {
+						return
+					}
+					continue
+				}
+				if modifiedEvent != nil {
+					event = modifiedEvent
+				}
+			}
+
+			if r.shouldAppendEvent(event, true) {
+				if err := r.sessionService.AppendEvent(invCtx, storedSession, event); err != nil {
+					yield(nil, fmt.Errorf("failed to add event to session: %w", err))
+					return
+				}
+			}
+
+			if !yield(event, nil) {
+				return
+			}
+		}
+	}
+}
+
+func (r *Runner) shouldAppendEvent(event *session.Event, isLiveCall bool) bool {
+	if isLiveCall && isLiveModelAudioEventWithInlineData(event) {
+		return false
+	}
+	return !event.Partial
+}
+
+func isLiveModelAudioEventWithInlineData(event *session.Event) bool {
+	if event.Content == nil {
+		return false
+	}
+	for _, part := range event.Content.Parts {
+		if part.InlineData != nil && strings.HasPrefix(part.InlineData.MIMEType, "audio/") {
+			return true
+		}
+	}
+	return false
+}
+
 // Run runs the agent for the given user input, yielding events from agents.
 // For each user message it finds the proper agent within an agent tree to
 // continue the conversation within the session.
@@ -169,7 +302,6 @@ func (r *Runner) Run(ctx context.Context, userID, sessionID string, msg *genai.C
 			Agent:            agentToRun,
 			UserContent:      msg,
 			RunConfig:        &cfg,
-			LiveRequestQueue: cfg.LiveRequestQueue,
 		})
 		ctx, err = r.appendMessageToSession(ctx, storedSession, msg, cfg.SaveInputBlobsAsArtifacts, r.pluginManager)
 		if err != nil {
