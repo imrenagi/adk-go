@@ -48,10 +48,10 @@ type ClientMessage struct {
 }
 
 func main() {
-	apiKey := os.Getenv("GOOGLE_API_KEY")
-	if apiKey == "" {
-		log.Fatal("GOOGLE_API_KEY environment variable is not set")
-	}
+	// apiKey := os.Getenv("GOOGLE_API_KEY")
+	// if apiKey == "" {
+	// 	log.Fatal("GOOGLE_API_KEY environment variable is not set")
+	// }
 
 	r := mux.NewRouter()
 
@@ -84,10 +84,30 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	defer conn.Close()
 
 	ctx := context.Background()
-	apiKey := os.Getenv("GOOGLE_API_KEY")
+	// apiKey := os.Getenv("GOOGLE_API_KEY")
 
-	model, err := gemini.NewModel(ctx, "gemini-2.5-flash-native-audio-preview-12-2025", &genai.ClientConfig{
-		APIKey: apiKey,
+	// cred, err := google.FindDefaultCredentials(ctx, "https://www.googleapis.com/auth/cloud-platform")
+	// if err != nil {
+	// 	log.Fatal("failed to find default credentials")
+
+	// }
+
+	// // create a new http client with otel tracing
+	// otelHTTPClient := &http.Client{
+	// 	Transport: otelhttp.NewTransport(http.DefaultTransport),
+	// }
+	// // set the http client to the context
+	// ctx = context.WithValue(ctx, oauth2.HTTPClient, otelHTTPClient)
+	// // create a new oauth2 client with the context
+	// httpClient := oauth2.NewClient(ctx, oauth2.ReuseTokenSource(nil, cred.TokenSource))
+
+	model, err := gemini.NewModel(ctx, "gemini-live-2.5-flash-preview-native-audio-09-2025", &genai.ClientConfig{
+		// APIKey: apiKey,
+		Project:  "imrenagi-gemini-experiment",
+		Location: "global",
+		Backend:  genai.BackendVertexAI,
+		// HTTPClient: httpClient,
+		// HTTPOptions: genai.HTTPOptions{APIVersion: "v1beta"},
 	})
 	if err != nil {
 		log.Printf("Failed to create model: %v", err)
