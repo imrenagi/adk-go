@@ -111,6 +111,7 @@ type Runner struct {
 }
 
 func (r *Runner) RunLive(ctx context.Context, userID, sessionID string, liveRequestQueue *agent.LiveRequestQueue, cfg agent.RunConfig) iter.Seq2[*session.Event, error] {
+	log.Println("Runner.RunLive")
 	return func(yield func(*session.Event, error) bool) {
 		resp, err := r.sessionService.Get(ctx, &session.GetRequest{
 			AppName:   r.appName,
@@ -118,6 +119,7 @@ func (r *Runner) RunLive(ctx context.Context, userID, sessionID string, liveRequ
 			SessionID: sessionID,
 		})
 		if err != nil {
+			log.Printf("Runner.RunLive.sessionService.Get: %v", err)
 			yield(nil, err)
 			return
 		}
@@ -126,9 +128,12 @@ func (r *Runner) RunLive(ctx context.Context, userID, sessionID string, liveRequ
 
 		agentToRun, err := r.findAgentToRun(storedSession, nil)
 		if err != nil {
+			log.Printf("Runner.RunLive.findAgentToRun: %v", err)
 			yield(nil, err)
 			return
 		}
+
+		log.Printf("Runner.RunLive.agentToRun: %s", agentToRun.Name())
 
 		ctx = parentmap.ToContext(ctx, r.parents)
 		ctx = runconfig.ToContext(ctx, &runconfig.RunConfig{
@@ -147,6 +152,8 @@ func (r *Runner) RunLive(ctx context.Context, userID, sessionID string, liveRequ
 			}
 		}
 
+		log.Printf("Runner.RunLive.artifacts: %v", artifacts)
+
 		var memoryImpl agent.Memory = nil
 		if r.memoryService != nil {
 			memoryImpl = &imemory.Memory{
@@ -157,6 +164,8 @@ func (r *Runner) RunLive(ctx context.Context, userID, sessionID string, liveRequ
 			}
 		}
 
+		log.Printf("Runner.RunLive.memoryImpl: %v", memoryImpl)
+
 		invCtx := icontext.NewInvocationContext(ctx, icontext.InvocationContextParams{
 			Artifacts:        artifacts,
 			Memory:           memoryImpl,
@@ -165,6 +174,8 @@ func (r *Runner) RunLive(ctx context.Context, userID, sessionID string, liveRequ
 			RunConfig:        &cfg,
 			LiveRequestQueue: liveRequestQueue,
 		})
+
+		log.Printf("Runner.RunLive.invCtx: %v", invCtx)
 
 		pluginManager := r.pluginManager
 		if pluginManager != nil {
@@ -188,8 +199,12 @@ func (r *Runner) RunLive(ctx context.Context, userID, sessionID string, liveRequ
 			}
 		}
 
+		log.Printf("Runner.RunLive.agentToRun.RunLive")
+
 		for event, err := range agentToRun.RunLive(invCtx) {
+
 			if err != nil {
+				log.Println(err)
 				if !yield(event, err) {
 					return
 				}
@@ -296,12 +311,12 @@ func (r *Runner) Run(ctx context.Context, userID, sessionID string, msg *genai.C
 		}
 
 		ctx := icontext.NewInvocationContext(ctx, icontext.InvocationContextParams{
-			Artifacts:        artifacts,
-			Memory:           memoryImpl,
-			Session:          sessioninternal.NewMutableSession(r.sessionService, storedSession),
-			Agent:            agentToRun,
-			UserContent:      msg,
-			RunConfig:        &cfg,
+			Artifacts:   artifacts,
+			Memory:      memoryImpl,
+			Session:     sessioninternal.NewMutableSession(r.sessionService, storedSession),
+			Agent:       agentToRun,
+			UserContent: msg,
+			RunConfig:   &cfg,
 		})
 		ctx, err = r.appendMessageToSession(ctx, storedSession, msg, cfg.SaveInputBlobsAsArtifacts, r.pluginManager)
 		if err != nil {

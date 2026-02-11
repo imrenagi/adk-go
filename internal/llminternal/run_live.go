@@ -17,6 +17,7 @@ package llminternal
 import (
 	"fmt"
 	"iter"
+	"log"
 
 	"google.golang.org/genai"
 
@@ -28,6 +29,7 @@ import (
 )
 
 func (f *Flow) RunLive(ctx agent.InvocationContext) iter.Seq2[*session.Event, error] {
+	log.Println("Flow.RunLive")
 	return func(yield func(*session.Event, error) bool) {
 		if f.Model == nil {
 			yield(nil, fmt.Errorf("agent %q: %w", ctx.Agent().Name(), ErrModelNotConfigured))
@@ -54,6 +56,8 @@ func (f *Flow) RunLive(ctx agent.InvocationContext) iter.Seq2[*session.Event, er
 			}
 		}
 
+		log.Println("Flow.RunLive.preprocess done")
+
 		// Connect to the model
 		conn, err := f.Model.Connect(ctx, req)
 		if err != nil {
@@ -62,11 +66,15 @@ func (f *Flow) RunLive(ctx agent.InvocationContext) iter.Seq2[*session.Event, er
 		}
 		defer conn.Close()
 
+		log.Println("Flow.RunLive.conn done")
+
 		queue := ctx.LiveRequestQueue()
 		if queue == nil {
 			yield(nil, fmt.Errorf("LiveRequestQueue not found in context"))
 			return
 		}
+
+		log.Println("Flow.RunLive.queue done")
 
 		// Start sender goroutine
 		go func() {
@@ -77,12 +85,14 @@ func (f *Flow) RunLive(ctx agent.InvocationContext) iter.Seq2[*session.Event, er
 					if !ok {
 						return // Queue closed
 					}
+					log.Println("Flow.RunLive.queue.Send")
 					if err := conn.Send(liveReq); err != nil {
 						// TODO: Handle send error. Maybe log or signal main loop?
 						// For now we just log/ignore as the main loop might catch connection issues too.
 						fmt.Printf("Error sending to live connection: %v\n", err)
 						return
 					}
+					log.Println("Flow.RunLive.queue.Send done")
 					if liveReq.Close {
 						return
 					}
@@ -94,8 +104,10 @@ func (f *Flow) RunLive(ctx agent.InvocationContext) iter.Seq2[*session.Event, er
 
 		// Main receive loop
 		for {
+			log.Println("Flow.RunLive.conn.Receive")
 			resp, err := conn.Receive()
 			if err != nil {
+				log.Println("Flow.RunLive.conn.Receive error")
 				yield(nil, err)
 				return
 			}

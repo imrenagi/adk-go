@@ -48,10 +48,10 @@ type ClientMessage struct {
 }
 
 func main() {
-	// apiKey := os.Getenv("GOOGLE_API_KEY")
-	// if apiKey == "" {
-	// 	log.Fatal("GOOGLE_API_KEY environment variable is not set")
-	// }
+	apiKey := os.Getenv("GOOGLE_API_KEY")
+	if apiKey == "" {
+		log.Fatal("GOOGLE_API_KEY environment variable is not set")
+	}
 
 	r := mux.NewRouter()
 
@@ -60,6 +60,7 @@ func main() {
 
 	// Static file server
 	staticDir := "static"
+	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir(staticDir))))
 	r.PathPrefix("/").Handler(http.FileServer(http.Dir(staticDir)))
 
 	port := os.Getenv("PORT")
@@ -84,7 +85,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	defer conn.Close()
 
 	ctx := context.Background()
-	// apiKey := os.Getenv("GOOGLE_API_KEY")
+	apiKey := os.Getenv("GOOGLE_API_KEY")
 
 	// cred, err := google.FindDefaultCredentials(ctx, "https://www.googleapis.com/auth/cloud-platform")
 	// if err != nil {
@@ -101,12 +102,12 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	// // create a new oauth2 client with the context
 	// httpClient := oauth2.NewClient(ctx, oauth2.ReuseTokenSource(nil, cred.TokenSource))
 
-	model, err := gemini.NewModel(ctx, "gemini-live-2.5-flash-preview-native-audio-09-2025", &genai.ClientConfig{
-		// APIKey: apiKey,
-		Project:  "imrenagi-gemini-experiment",
-		Location: "global",
-		Backend:  genai.BackendVertexAI,
-		// HTTPClient: httpClient,
+	model, err := gemini.NewModel(ctx, "gemini-2.5-flash-native-audio-preview-09-2025", &genai.ClientConfig{
+		APIKey: apiKey,
+		// Project:  "imrenagi-gemini-experiment",
+		// Location: "global",
+		// Backend:  genai.BackendVertexAI,
+		// // HTTPClient: httpClient,
 		// HTTPOptions: genai.HTTPOptions{APIVersion: "v1beta"},
 	})
 	if err != nil {
@@ -151,11 +152,12 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	runConfig := agent.RunConfig{
 		StreamingMode: agent.StreamingModeBidi,
 		LiveConnectConfig: &genai.LiveConnectConfig{
-			ResponseModalities: []genai.Modality{genai.ModalityText, genai.ModalityAudio},
+			ResponseModalities: []genai.Modality{genai.ModalityAudio},
 			SpeechConfig: &genai.SpeechConfig{
+				// LanguageCode: conversation.Language.Code,
 				VoiceConfig: &genai.VoiceConfig{
 					PrebuiltVoiceConfig: &genai.PrebuiltVoiceConfig{
-						VoiceName: "Aoide",
+						VoiceName: "Aoede",
 					},
 				},
 			},
@@ -198,6 +200,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if messageType == websocket.BinaryMessage {
+			log.Printf("Received binary message: %d bytes", len(p))
 			// Binary data is assumed to be PCM audio from the client
 			err := liveRequestQueue.SendContent(&genai.Content{
 				Role: "user",
@@ -214,11 +217,14 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				log.Printf("Error sending audio to queue: %v", err)
 			}
 		} else if messageType == websocket.TextMessage {
+			log.Printf("Received text message: %s", string(p))
 			var msg ClientMessage
 			if err := json.Unmarshal(p, &msg); err != nil {
 				log.Printf("Failed to unmarshal text message: %v", err)
 				continue
 			}
+
+			log.Printf("Received message: %v", msg)
 
 			switch msg.Type {
 			case "text":
@@ -232,15 +238,10 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 					log.Printf("Failed to decode base64 image: %v", err)
 					continue
 				}
-				err = liveRequestQueue.SendContent(&genai.Content{
-					Role: "user",
-					Parts: []*genai.Part{
-						{
-							InlineData: &genai.Blob{
-								MIMEType: msg.MimeType,
-								Data:     data,
-							},
-						},
+				err = liveRequestQueue.SendRealtimeInput(&genai.LiveRealtimeInput{
+					Media: &genai.Blob{
+						Data:     data,
+						MIMEType: msg.MimeType,
 					},
 				})
 				if err != nil {

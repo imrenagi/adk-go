@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"iter"
+	"log/slog"
 	"net/http"
 	"runtime"
 	"strings"
@@ -154,12 +155,13 @@ func (m *geminiModel) Connect(ctx context.Context, req *model.LLMRequest) (model
 	}
 
 	config := &genai.LiveConnectConfig{
-		HTTPOptions:        req.Config.HTTPOptions,
+		// HTTPOptions:        req.Config.HTTPOptions,
 		ResponseModalities: modalities,
-		Temperature:        req.Config.Temperature,
+		// Temperature:        req.Config.Temperature,
 	}
 
 	if req.LiveConnectConfig != nil {
+		slog.Info("Gemini.Connect.config", "req.LiveConnectConfig", req.LiveConnectConfig)
 		config = req.LiveConnectConfig
 	}
 
@@ -167,6 +169,9 @@ func (m *geminiModel) Connect(ctx context.Context, req *model.LLMRequest) (model
 	if req.Config != nil && req.Config.SystemInstruction != nil {
 		config.SystemInstruction = req.Config.SystemInstruction
 	}
+
+	slog.Info("Gemini.Connect.config", "config", config)
+	slog.Info("Gemini.Connect.config", "model", m.name, "config", config)
 
 	session, err := m.client.Live.Connect(ctx, m.name, config)
 	if err != nil {
@@ -206,8 +211,11 @@ func (c *liveConnection) Send(req *model.LiveRequest) error {
 func (c *liveConnection) Receive() (*model.LLMResponse, error) {
 	msg, err := c.session.Receive()
 	if err != nil {
+		slog.Error("Gemini.Receive.error", "error", err)
 		return nil, err
 	}
+
+	slog.Info("Gemini.Receive.msg", "msg", msg)
 
 	resp := &model.LLMResponse{}
 
