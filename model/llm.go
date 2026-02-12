@@ -71,6 +71,8 @@ type LiveRequest struct {
 	Content       *genai.Content
 	RealtimeInput *genai.LiveRealtimeInput
 	ToolResponse  *genai.LiveToolResponseInput
+	ActivityStart *genai.ActivityStart
+	ActivityEnd   *genai.ActivityEnd
 	Close         bool
 }
 

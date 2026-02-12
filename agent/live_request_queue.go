@@ -66,6 +66,14 @@ func (q *LiveRequestQueue) SendToolResponse(resp *genai.LiveToolResponseInput) e
 	return q.Send(&model.LiveRequest{ToolResponse: resp})
 }
 
+func (q *LiveRequestQueue) SendActivityStart() error {
+	return q.Send(&model.LiveRequest{ActivityStart: &genai.ActivityStart{}})
+}
+
+func (q *LiveRequestQueue) SendActivityEnd() error {
+	return q.Send(&model.LiveRequest{ActivityEnd: &genai.ActivityEnd{}})
+}
+
 // Send sends a generic LiveRequest to the queue.
 func (q *LiveRequestQueue) Send(req *model.LiveRequest) error {
 	q.mu.Lock()

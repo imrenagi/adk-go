@@ -95,7 +95,6 @@ var (
 
 func (f *Flow) Run(ctx agent.InvocationContext) iter.Seq2[*session.Event, error] {
 	if runconfig.FromContext(ctx).StreamingMode == runconfig.StreamingModeBidi {
-		log.Println("Flow.RunLive")
 		return f.RunLive(ctx)
 	}
 

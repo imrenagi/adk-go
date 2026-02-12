@@ -185,8 +185,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Session creation (might already exist): %v", err)
 	}
 
-	liveRequestQueue := agent.NewLiveRequestQueue()
-
+	// Phase 2 - 3
 	runConfig := agent.RunConfig{
 		StreamingMode:      agent.StreamingModeBidi,
 		ResponseModalities: []genai.Modality{genai.ModalityAudio},
@@ -199,6 +198,9 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
+	// Phase 2 - 4
+	liveRequestQueue := agent.NewLiveRequestQueue()
+
 	// Channel to signal the reading loop to stop
 	done := make(chan struct{})
 
@@ -206,6 +208,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer close(done)
 
+		// Phase 2 - 5
 		for ev, err := range runn.RunLive(ctx, userID, sessionID, liveRequestQueue, runConfig) {
 			if err != nil {
 				log.Printf("Runner error: %v", err)
@@ -260,6 +263,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 			switch msg.Type {
 			case "text":
+				// Phase 3 Send content / Send real time
 				err := liveRequestQueue.SendContent(genai.NewContentFromText(msg.Text, genai.RoleUser))
 				if err != nil {
 					log.Printf("Error sending text to queue: %v", err)
@@ -270,6 +274,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 					log.Printf("Failed to decode base64 image: %v", err)
 					continue
 				}
+				// Phase 3 Send content / Send real time
 				err = liveRequestQueue.SendRealtimeInput(&genai.LiveRealtimeInput{
 					Media: &genai.Blob{
 						Data:     data,
