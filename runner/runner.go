@@ -111,7 +111,6 @@ type Runner struct {
 }
 
 func (r *Runner) RunLive(ctx context.Context, userID, sessionID string, liveRequestQueue *agent.LiveRequestQueue, cfg agent.RunConfig) iter.Seq2[*session.Event, error] {
-	log.Println("Runner.RunLive")
 	return func(yield func(*session.Event, error) bool) {
 		resp, err := r.sessionService.Get(ctx, &session.GetRequest{
 			AppName:   r.appName,
@@ -119,7 +118,6 @@ func (r *Runner) RunLive(ctx context.Context, userID, sessionID string, liveRequ
 			SessionID: sessionID,
 		})
 		if err != nil {
-			log.Printf("Runner.RunLive.sessionService.Get: %v", err)
 			yield(nil, err)
 			return
 		}
@@ -128,17 +126,22 @@ func (r *Runner) RunLive(ctx context.Context, userID, sessionID string, liveRequ
 
 		agentToRun, err := r.findAgentToRun(storedSession, nil)
 		if err != nil {
-			log.Printf("Runner.RunLive.findAgentToRun: %v", err)
 			yield(nil, err)
 			return
 		}
 
-		log.Printf("Runner.RunLive.agentToRun: %s", agentToRun.Name())
+		
+
+		liveConnectConfig := &genai.LiveConnectConfig{
+			ResponseModalities: cfg.ResponseModalities,
+			SpeechConfig:       cfg.SpeechConfig,
+			// SystemInstruction: , // TODO(imre): where do we get this from?
+		}
 
 		ctx = parentmap.ToContext(ctx, r.parents)
 		ctx = runconfig.ToContext(ctx, &runconfig.RunConfig{
 			StreamingMode:     runconfig.StreamingMode(cfg.StreamingMode),
-			LiveConnectConfig: cfg.LiveConnectConfig,
+			LiveConnectConfig: liveConnectConfig,
 		})
 		ctx = plugininternal.ToContext(ctx, r.pluginManager)
 
@@ -152,8 +155,6 @@ func (r *Runner) RunLive(ctx context.Context, userID, sessionID string, liveRequ
 			}
 		}
 
-		log.Printf("Runner.RunLive.artifacts: %v", artifacts)
-
 		var memoryImpl agent.Memory = nil
 		if r.memoryService != nil {
 			memoryImpl = &imemory.Memory{
@@ -164,8 +165,6 @@ func (r *Runner) RunLive(ctx context.Context, userID, sessionID string, liveRequ
 			}
 		}
 
-		log.Printf("Runner.RunLive.memoryImpl: %v", memoryImpl)
-
 		invCtx := icontext.NewInvocationContext(ctx, icontext.InvocationContextParams{
 			Artifacts:        artifacts,
 			Memory:           memoryImpl,
@@ -175,7 +174,7 @@ func (r *Runner) RunLive(ctx context.Context, userID, sessionID string, liveRequ
 			LiveRequestQueue: liveRequestQueue,
 		})
 
-		log.Printf("Runner.RunLive.invCtx: %v", invCtx)
+		// TODO(imre): Do we need to store message to session?
 
 		pluginManager := r.pluginManager
 		if pluginManager != nil {
@@ -184,7 +183,7 @@ func (r *Runner) RunLive(ctx context.Context, userID, sessionID string, liveRequ
 			earlyExitResult, err := pluginManager.RunBeforeRunCallback(invCtx)
 			if earlyExitResult != nil || err != nil {
 				earlyExitEvent := session.NewEvent(invCtx.InvocationID())
-				earlyExitEvent.Author = "model"
+				earlyExitEvent.Author = "model" // TODO(imre): Is this correct?
 				earlyExitEvent.LLMResponse = model.LLMResponse{
 					Content: earlyExitResult,
 				}
@@ -198,8 +197,6 @@ func (r *Runner) RunLive(ctx context.Context, userID, sessionID string, liveRequ
 				return
 			}
 		}
-
-		log.Printf("Runner.RunLive.agentToRun.RunLive")
 
 		for event, err := range agentToRun.RunLive(invCtx) {
 
@@ -285,8 +282,7 @@ func (r *Runner) Run(ctx context.Context, userID, sessionID string, msg *genai.C
 
 		ctx = parentmap.ToContext(ctx, r.parents)
 		ctx = runconfig.ToContext(ctx, &runconfig.RunConfig{
-			StreamingMode:     runconfig.StreamingMode(cfg.StreamingMode),
-			LiveConnectConfig: cfg.LiveConnectConfig,
+			StreamingMode: runconfig.StreamingMode(cfg.StreamingMode),
 		})
 		ctx = plugininternal.ToContext(ctx, r.pluginManager)
 

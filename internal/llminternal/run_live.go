@@ -17,7 +17,7 @@ package llminternal
 import (
 	"fmt"
 	"iter"
-	"log"
+	"log/slog"
 
 	"google.golang.org/genai"
 
@@ -29,7 +29,6 @@ import (
 )
 
 func (f *Flow) RunLive(ctx agent.InvocationContext) iter.Seq2[*session.Event, error] {
-	log.Println("Flow.RunLive")
 	return func(yield func(*session.Event, error) bool) {
 		if f.Model == nil {
 			yield(nil, fmt.Errorf("agent %q: %w", ctx.Agent().Name(), ErrModelNotConfigured))
@@ -56,8 +55,6 @@ func (f *Flow) RunLive(ctx agent.InvocationContext) iter.Seq2[*session.Event, er
 			}
 		}
 
-		log.Println("Flow.RunLive.preprocess done")
-
 		// Connect to the model
 		conn, err := f.Model.Connect(ctx, req)
 		if err != nil {
@@ -66,15 +63,11 @@ func (f *Flow) RunLive(ctx agent.InvocationContext) iter.Seq2[*session.Event, er
 		}
 		defer conn.Close()
 
-		log.Println("Flow.RunLive.conn done")
-
 		queue := ctx.LiveRequestQueue()
 		if queue == nil {
 			yield(nil, fmt.Errorf("LiveRequestQueue not found in context"))
 			return
 		}
-
-		log.Println("Flow.RunLive.queue done")
 
 		// Start sender goroutine
 		go func() {
@@ -85,14 +78,12 @@ func (f *Flow) RunLive(ctx agent.InvocationContext) iter.Seq2[*session.Event, er
 					if !ok {
 						return // Queue closed
 					}
-					log.Println("Flow.RunLive.queue.Send")
 					if err := conn.Send(liveReq); err != nil {
 						// TODO: Handle send error. Maybe log or signal main loop?
 						// For now we just log/ignore as the main loop might catch connection issues too.
 						fmt.Printf("Error sending to live connection: %v\n", err)
 						return
 					}
-					log.Println("Flow.RunLive.queue.Send done")
 					if liveReq.Close {
 						return
 					}
@@ -104,10 +95,8 @@ func (f *Flow) RunLive(ctx agent.InvocationContext) iter.Seq2[*session.Event, er
 
 		// Main receive loop
 		for {
-			log.Println("Flow.RunLive.conn.Receive")
 			resp, err := conn.Receive()
 			if err != nil {
-				log.Println("Flow.RunLive.conn.Receive error")
 				yield(nil, err)
 				return
 			}
@@ -147,7 +136,9 @@ func (f *Flow) RunLive(ctx agent.InvocationContext) iter.Seq2[*session.Event, er
 					yield(nil, err)
 					return
 				}
+
 				if ev != nil {
+					slog.Info("Function calls handled", "event", ev)
 					// Yield the function response event (execution result)
 					if !yield(ev, nil) {
 						return
@@ -166,6 +157,7 @@ func (f *Flow) RunLive(ctx agent.InvocationContext) iter.Seq2[*session.Event, er
 						}
 
 						if len(toolResponses.FunctionResponses) > 0 {
+							slog.Info("Sending tool responses", "toolResponses", toolResponses)
 							// Send directly to connection (bypass queue to avoid latency/ordering issues mixed with user input?)
 							// Typically tool outputs corresponding to model calls should go ASAP.
 							// But using queue ensures serialization if necessary.

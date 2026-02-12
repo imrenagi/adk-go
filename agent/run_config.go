@@ -36,6 +36,13 @@ type RunConfig struct {
 	// If true, ADK runner will save each part of the user input that is a blob
 	// (e.g., images, files) as an artifact.
 	SaveInputBlobsAsArtifacts bool
-	// Configuration for live connect behavior.
-	LiveConnectConfig *genai.LiveConnectConfig
+	// // Configuration for live connect behavior.
+	// LiveConnectConfig *genai.LiveConnectConfig
+
+	// Optional. The requested modalities of the response. Represents the set of
+	// modalities that the model can return. Defaults to AUDIO if not specified.
+	ResponseModalities []genai.Modality `json:"responseModalities,omitempty"`
+
+	// Optional. The speech generation configuration.
+	SpeechConfig *genai.SpeechConfig `json:"speechConfig,omitempty"`
 }
