@@ -16,8 +16,10 @@ package context
 
 import (
 	"context"
+	"sync"
 
 	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
 	"google.golang.org/genai"
 
 	"google.golang.org/adk/agent"
@@ -32,10 +34,15 @@ type InvocationContextParams struct {
 	Branch string
 	Agent  agent.Agent
 
-	UserContent   *genai.Content
-	RunConfig     *agent.RunConfig
-	EndInvocation bool
-	InvocationID  string
+	UserContent        *genai.Content
+	RunConfig          *agent.RunConfig
+	EndInvocation      bool
+	ResumabilityConfig *agent.ResumabilityConfig
+
+	LiveRequestQueue            *agent.LiveRequestQueue
+	LiveSessionResumptionHandle string
+
+	InvocationID string
 }
 
 func NewInvocationContext(ctx context.Context, params InvocationContextParams) agent.InvocationContext {
@@ -45,13 +52,30 @@ func NewInvocationContext(ctx context.Context, params InvocationContextParams) a
 	return &InvocationContext{
 		Context: ctx,
 		params:  params,
+		state: &invocationState{
+			endInvocation:               params.EndInvocation,
+			liveSessionResumptionHandle: params.LiveSessionResumptionHandle,
+			transcriptionCache:          make([]agent.TranscriptionEntry, 0),
+			inputRealtimeCache:          make([]agent.RealtimeCacheEntry, 0),
+			outputRealtimeCache:         make([]agent.RealtimeCacheEntry, 0),
+		},
 	}
+}
+
+type invocationState struct {
+	mu                          sync.RWMutex
+	endInvocation               bool
+	liveSessionResumptionHandle string
+	transcriptionCache          []agent.TranscriptionEntry
+	inputRealtimeCache          []agent.RealtimeCacheEntry
+	outputRealtimeCache         []agent.RealtimeCacheEntry
 }
 
 type InvocationContext struct {
 	context.Context
 
 	params InvocationContextParams
+	state  *invocationState
 }
 
 func (c *InvocationContext) Artifacts() agent.Artifacts {
@@ -87,11 +111,86 @@ func (c *InvocationContext) RunConfig() *agent.RunConfig {
 }
 
 func (c *InvocationContext) EndInvocation() {
-	c.params.EndInvocation = true
+	c.state.mu.Lock()
+	defer c.state.mu.Unlock()
+	c.state.endInvocation = true
 }
 
 func (c *InvocationContext) Ended() bool {
-	return c.params.EndInvocation
+	c.state.mu.RLock()
+	defer c.state.mu.RUnlock()
+	return c.state.endInvocation
+}
+
+func (c *InvocationContext) LiveRequestQueue() *agent.LiveRequestQueue {
+	return c.params.LiveRequestQueue
+}
+
+func (c *InvocationContext) TranscriptionCache() []agent.TranscriptionEntry {
+	c.state.mu.RLock()
+	defer c.state.mu.RUnlock()
+	return c.state.transcriptionCache
+}
+
+func (c *InvocationContext) LiveSessionResumptionHandle() string {
+	c.state.mu.RLock()
+	handle := c.state.liveSessionResumptionHandle
+	c.state.mu.RUnlock()
+
+	log.Info().Str("handle", handle).
+		Str("func", "InvocationContext.LiveSessionResumptionHandle").
+		Msg("Getting live session resumption handle")
+	return handle
+}
+
+func (c *InvocationContext) InputRealtimeCache() []agent.RealtimeCacheEntry {
+	c.state.mu.RLock()
+	defer c.state.mu.RUnlock()
+	return c.state.inputRealtimeCache
+}
+
+func (c *InvocationContext) OutputRealtimeCache() []agent.RealtimeCacheEntry {
+	c.state.mu.RLock()
+	defer c.state.mu.RUnlock()
+	return c.state.outputRealtimeCache
+}
+
+func (c *InvocationContext) ResumabilityConfig() *agent.ResumabilityConfig {
+	return c.params.ResumabilityConfig
+}
+
+func (c *InvocationContext) AppendInputRealtimeCache(entry agent.RealtimeCacheEntry) {
+	c.state.mu.Lock()
+	defer c.state.mu.Unlock()
+	c.state.inputRealtimeCache = append(c.state.inputRealtimeCache, entry)
+}
+
+func (c *InvocationContext) AppendOutputRealtimeCache(entry agent.RealtimeCacheEntry) {
+	c.state.mu.Lock()
+	defer c.state.mu.Unlock()
+	c.state.outputRealtimeCache = append(c.state.outputRealtimeCache, entry)
+}
+
+func (c *InvocationContext) ClearInputRealtimeCache() {
+	c.state.mu.Lock()
+	defer c.state.mu.Unlock()
+	c.state.inputRealtimeCache = nil
+}
+
+func (c *InvocationContext) ClearOutputRealtimeCache() {
+	c.state.mu.Lock()
+	defer c.state.mu.Unlock()
+	c.state.outputRealtimeCache = nil
+}
+
+func (c *InvocationContext) SetLiveSessionResumptionHandle(handle string) {
+	log.Info().Str("handle", handle).
+		Str("func", "InvocationContext.SetLiveSessionResumptionHandle").
+		Msg("Setting live session resumption handle")
+
+	c.state.mu.Lock()
+	defer c.state.mu.Unlock()
+	c.state.liveSessionResumptionHandle = handle
 }
 
 func (c *InvocationContext) WithContext(ctx context.Context) agent.InvocationContext {
